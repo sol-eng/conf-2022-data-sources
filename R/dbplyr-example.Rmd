@@ -1,0 +1,124 @@
+---
+title: "dbplyr example"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set-up connection and copy dataset
+
+```{r}
+library(dplyr)
+con <- DBI::dbConnect(RSQLite::SQLite(), dbname = ":memory:")
+
+# con <- DBI::dbConnect(odbc::odbc(), "Postgres_dev")
+
+copy_to(con, nycflights13::flights, "flights",
+        temporary = FALSE, 
+        indexes = list(
+          c("year", "month", "day"), 
+          "carrier", 
+          "tailnum",
+          "dest"
+        )
+)
+```
+
+## Do some sample queries
+
+```{r}
+flights_db <- tbl(con, "flights")
+
+flights_db %>% select(year:day, dep_delay, arr_delay)
+
+flights_db %>% filter(dep_delay > 240)
+
+flights_db %>% 
+  group_by(dest) %>%
+  summarise(delay = mean(dep_time))
+```
+
+
+Note the warning:
+
+> Warning: Missing values are always removed in SQL.
+> Use `mean(x, na.rm = TRUE)` to silence this warning
+> This warning is displayed only once per session.
+
+## Define analysis query and translate to SQL
+
+```{r}
+tailnum_delay_db <- flights_db %>% 
+  group_by(tailnum) %>%
+  summarise(
+    delay = mean(arr_delay),
+    n = n()
+  ) %>% 
+  arrange(desc(delay)) %>%
+  filter(n > 100)
+
+tailnum_delay_db %>% show_query()
+```
+
+Note the warning:
+
+> Warning: ORDER BY is ignored in subqueries without LIMIT
+> ℹ Do you need to move arrange() later in the pipeline or use window_order() instead?
+
+## Do the query
+
+```{r}
+system.time(tailnum_delay <- tailnum_delay_db %>% collect())
+tailnum_delay
+```
+
+## Comparison SQL
+
+```{r}
+system.time({
+  res <- DBI::dbSendQuery(con, "SELECT *
+                                FROM (SELECT `tailnum`, AVG(`arr_delay`) AS `delay`, COUNT(*) AS `n`
+                                FROM `flights`
+                                GROUP BY `tailnum`)
+                                WHERE (`n` > 100.0)")
+  tailnum_delay_sql <- DBI::dbFetch(res)
+  DBI::dbClearResult(res)
+})
+head(tailnum_delay_sql)
+```
+
+
+## Comparison load data first
+
+Check memory usage before executing this chunk!
+
+```{r}
+pryr::mem_used()
+system.time({
+  flights <- flights_db %>% collect()
+  tailnum_delay_local <- flights %>% 
+  group_by(tailnum) %>%
+  summarise(
+    delay = mean(arr_delay),
+    n = n()
+  ) %>% 
+  arrange(desc(delay)) %>%
+  filter(n > 100)
+})
+tailnum_delay_local
+pryr::mem_used()
+```
+
+When processing locally, one first transfers about `r format(object.size(flights), units = "Mb")`
+of data from the DB. Processing in the DB requires only about
+`r format(object.size(tailnum_delay), units = "Kb")` of data transfer.
+
+
+
+## Close connection
+
+```{r}
+DBI::dbDisconnect(con)
+```

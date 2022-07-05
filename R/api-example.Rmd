@@ -1,7 +1,6 @@
 ---
 title: "Bike Share API"
 output: html_document
-date: '2022-07-05'
 ---
 
 ```{r setup, include=FALSE}
