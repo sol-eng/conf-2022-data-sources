@@ -1,0 +1,74 @@
+---
+title: "Bike Share API"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Helper functions
+
+```{r}
+library(dplyr)
+feeds_urls <- function(url = "https://gbfs.capitalbikeshare.com/gbfs/gbfs.json", lang = "en") {
+  tryCatch({
+    feeds <- httr::GET(url) %>%
+      httr::content()
+    feeds$data[[lang]]$feeds %>%
+      purrr::map_df(tibble::as_tibble) %>%
+      dplyr::mutate(last_updated = as.POSIXct(feeds$last_updated, origin = "1970-01-01 00:00:00 UTC"))
+  },
+  error = function(e) glue::glue("Failure in feed retrieval: {e}"))
+}
+get_data <- function(url) {
+  tryCatch({
+    httr::GET(url) %>%
+      httr::content() %>%
+      clean_data(is_sys_info = grepl("system_information", url))
+  },
+  error = function(e) {
+    message(glue::glue("Data access failure: {e}"))
+    return(NULL)
+  })
+}
+clean_data <- function(x, is_sys_info = FALSE) {
+  # Create data object with metadata
+  dat <- list(last_updated = as.POSIXct(x$last_updated,
+                                        origin = "1970-01-01 00:00:00 UTC"),
+              ttl = x$ttl)
+  class(dat) <- "bike_data"
+  # Add actual bike data
+  if (is_sys_info) {
+    dat$data <- x$data %>% as.list() %>% tibble::as_tibble()
+  } else {
+    dat$data <- x$data[[1]] %>% purrr::map_df(tibble::as_tibble)
+  }
+  dat
+}
+```
+
+## Get raw data
+
+```{r}
+feeds <- feeds_urls()
+dat <- feeds %>% 
+  filter(name == "station_status") %>% 
+  pull(url) %>% 
+  get_data()
+```
+
+Got data as of `r dat$last_updated`.
+
+## Extract data and format data frame
+
+```{r}
+df <- dat %>%
+  magrittr::extract2("data") %>%
+  mutate(time = dat$last_updated) %>%
+  select(is_installed, num_bikes_available, last_reported, 
+         is_renting, eightd_has_available_keys, num_docks_available, 
+         num_docks_disabled, is_returning, station_id, 
+         num_ebikes_available, num_bikes_disabled, time)
+df
+```
