@@ -11,19 +11,19 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(dplyr)
-con <- DBI::dbConnect(RSQLite::SQLite(), dbname = ":memory:")
+con <- DBI::dbConnect(odbc::odbc(), "Postgres Dev")
 
-# con <- DBI::dbConnect(odbc::odbc(), "Postgres_dev")
-
-copy_to(con, nycflights13::flights, "flights",
-        temporary = FALSE, 
-        indexes = list(
-          c("year", "month", "day"), 
-          "carrier", 
-          "tailnum",
-          "dest"
-        )
-)
+if (!DBI::dbExistsTable(con, "flights")) {
+  copy_to(con, nycflights13::flights, "flights",
+          temporary = FALSE, 
+          indexes = list(
+            c("year", "month", "day"), 
+            "carrier", 
+            "tailnum",
+            "dest"
+          )
+  )
+}
 ```
 
 ## Do some sample queries
@@ -78,11 +78,11 @@ tailnum_delay
 
 ```{r}
 system.time({
-  res <- DBI::dbSendQuery(con, "SELECT *
-                                FROM (SELECT `tailnum`, AVG(`arr_delay`) AS `delay`, COUNT(*) AS `n`
-                                FROM `flights`
-                                GROUP BY `tailnum`)
-                                WHERE (`n` > 100.0)")
+  res <- DBI::dbSendQuery(con, 'SELECT *
+                                FROM (SELECT "tailnum", AVG("arr_delay") AS "delay", COUNT(*) AS "n"
+                                FROM "flights"
+                                GROUP BY "tailnum") "q01"
+                                WHERE ("n" > 100.0)')
   tailnum_delay_sql <- DBI::dbFetch(res)
   DBI::dbClearResult(res)
 })
