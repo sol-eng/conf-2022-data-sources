@@ -1,0 +1,60 @@
+---
+title: "DB connections"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Inspecting `odbc.ini` and `odbcinst.ini`
+
+Any DSNs configured?
+
+```{bash}
+cat /etc/odbc.ini
+```
+Here `Postgres Dev` and `Postgres Prod` are relevant.
+
+What is the `PostgreSQL` driver?
+
+```{bash}
+grep -A 4 -i PostgreSQL /etc/odbcinst.ini
+```
+
+## Connecting using RPostgres
+
+```{r}
+con <- DBI::dbConnect(RPostgres::Postgres(),
+                      dbname = 'postgres', 
+                      host = 'localhost', 
+                      port = 5432, 
+                      user = rstudioapi::askForPassword("Database user"),
+                      password = rstudioapi::askForPassword("Database password"))
+```
+
+## Connecting using odbc
+
+```{r}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = "PostgreSQL",
+                      Server   = "localhost",
+                      Database = "postgres",
+                      UID      = rstudioapi::askForPassword("Database user"),
+                      PWD      = rstudioapi::askForPassword("Database password"),
+                      Port     = 5432)
+```
+
+## Connect with DSN and `isql`
+
+```{bash}
+isql "Postgres Dev" <<<"quit"
+```
+
+## Connect with DSN in R
+
+```{r}
+con <- DBI::dbConnect(odbc::odbc(),
+                      DSN = "Postgres Dev")
+
+```
